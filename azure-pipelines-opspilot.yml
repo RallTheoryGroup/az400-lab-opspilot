@@ -1,0 +1,40 @@
+trigger:
+  branches:
+    include: [main]
+pr:
+  branches:
+    include: [main]
+pool:
+  vmImage: ubuntu-latest
+variables:
+  app: RallTheoryGroup/src/products/opspilot/src
+  npm_config_cache: $(Pipeline.Workspace)/.npm
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: 22.x
+  - task: Cache@2
+    inputs:
+      key: 'npm | "$(Agent.OS)" | $(Build.SourcesDirectory)/$(app)/package-lock.json'
+      restoreKeys: |
+        npm | "$(Agent.OS)"
+      path: $(npm_config_cache)
+  - bash: npm ci
+    workingDirectory: $(app)
+    env:
+      npm_config_cache: $(npm_config_cache)
+  - bash: npm run check
+    workingDirectory: $(app)
+  - bash: |
+      mkdir -p test-results
+      npm test -- --ci --json --outputFile=test-results/jest.json
+    workingDirectory: $(app)
+  - publish: $(app)/test-results
+    artifact: opspilot-test-evidence
+    condition: succeededOrFailed()
+  - bash: |
+      mkdir -p dist
+      cp index.js package.json package-lock.json dist/
+    workingDirectory: $(app)
+  - publish: $(app)/dist
+    artifact: opspilot-candidate
