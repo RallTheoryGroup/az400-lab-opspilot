@@ -33,6 +33,6 @@ test('server returns the OpsPilot health contract', async () => {
   expect(response.status).toBe(200);
   expect(response.type).toContain('application/json');
   expect(JSON.parse(response.body)).toEqual({
-    app: 'OpsPilot', status: 'running', version: '1.0.0'
+    app: 'OpsPilotX', status: 'running', version: '1.0.0'
   });
 });
