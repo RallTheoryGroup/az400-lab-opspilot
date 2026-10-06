@@ -1,0 +1,55 @@
+trigger: none
+pr: none
+pool:
+  vmImage: ubuntu-latest
+variables:
+  resourceGroup: rg-opspilot-ch10-casey
+  template: RallTheoryGroup/src/products/opspilot/infra/main.bicep
+  parametersFile: RallTheoryGroup/src/products/opspilot/infra/dev.parameters.json
+stages:
+  - stage: Preview
+    jobs:
+      - job: Validate
+        steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: opspilot-lab-azure
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az bicep build --file "$(template)" --outfile "$(Build.ArtifactStagingDirectory)/main.json"
+                cp "$(parametersFile)" "$(Build.ArtifactStagingDirectory)/parameters.json"
+                az deployment group validate -g "$(resourceGroup)" \
+                  --template-file "$(Build.ArtifactStagingDirectory)/main.json" \
+                  --parameters @"$(Build.ArtifactStagingDirectory)/parameters.json"
+                az deployment group what-if -g "$(resourceGroup)" \
+                  --template-file "$(Build.ArtifactStagingDirectory)/main.json" \
+                  --parameters @"$(Build.ArtifactStagingDirectory)/parameters.json" \
+                  --no-pretty-print > "$(Build.ArtifactStagingDirectory)/what-if.json"
+          - publish: $(Build.ArtifactStagingDirectory)
+            artifact: reviewed-infrastructure
+  - stage: Apply
+    dependsOn: Preview
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: Provision
+        environment: opspilot-infra-lab
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: none
+                - download: current
+                  artifact: reviewed-infrastructure
+                - task: AzureCLI@2
+                  inputs:
+                    azureSubscription: opspilot-lab-azure
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      az deployment group create -g "$(resourceGroup)" \
+                        --name "opspilot-$(Build.BuildId)" \
+                        --template-file "$(Pipeline.Workspace)/reviewed-infrastructure/main.json" \
+                        --parameters @"$(Pipeline.Workspace)/reviewed-infrastructure/parameters.json"
